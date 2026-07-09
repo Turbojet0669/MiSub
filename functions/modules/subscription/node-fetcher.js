@@ -6,6 +6,26 @@ import {
     parseFilterRuleText,
     encodeArrayBufferToBase64
 } from '../utils/node-cleaner.js';
+import {
+    isRealProxyNode,
+    readSubscriptionNodeCache,
+    writeSubscriptionNodeCache
+} from '../../services/subscription-service.js';
+
+function nodesFromCachedUrls(cachedUrls, subscriptionName) {
+    return cachedUrls
+        .filter(isRealProxyNode)
+        .map(nodeUrl => {
+            const parsedNode = parseNodeList(nodeUrl)[0];
+            if (!parsedNode) return null;
+            return {
+                ...parsedNode,
+                url: nodeUrl,
+                subscriptionName
+            };
+        })
+        .filter(node => node?.url);
+}
 
 /**
  * 获取单个订阅的节点
@@ -17,11 +37,28 @@ import {
  * @param {string} excludeRules - 过滤规则文本
  * @param {boolean} skipCertVerify - 是否跳过 TLS 证书校验
  * @param {boolean} plusAsSpace - 是否将名称中的 + 视为空格
+ * @param {boolean} enableNodeCache - 是否启用保护性节点缓存
+ * @param {Object|null} storageAdapter - 存储适配器
+ * @param {Object|null} subscription - 当前订阅对象（用于缓存 key）
  * @returns {Promise<Object>} 节点获取结果
  */
-export async function fetchSubscriptionNodes(url, subscriptionName, userAgent, customUserAgent = null, debug = false, excludeRules = '', fetchProxy = null, skipCertVerify = false, plusAsSpace = false, enableNodeCache = false) {
+export async function fetchSubscriptionNodes(url, subscriptionName, userAgent, customUserAgent = null, debug = false, excludeRules = '', fetchProxy = null, skipCertVerify = false, plusAsSpace = false, enableNodeCache = false, storageAdapter = null, subscription = null) {
     // 自动检测调试 Token
     const shouldDebug = debug || (url && url.includes('b0b422857bb46aba65da8234c84f38c6'));
+    const cacheSub = subscription || { url, name: subscriptionName };
+    const readCachedResult = async (error = null) => {
+        if (!enableNodeCache || !storageAdapter) return null;
+        const cached = await readSubscriptionNodeCache(storageAdapter, cacheSub);
+        const cachedNodes = nodesFromCachedUrls(cached?.nodes || [], subscriptionName);
+        if (cachedNodes.length === 0) return null;
+        return {
+            subscriptionName,
+            url,
+            success: true,
+            nodes: cachedNodes,
+            error
+        };
+    };
 
     try {
         const effectiveUserAgent = customUserAgent && customUserAgent.trim() !== ''
@@ -54,6 +91,8 @@ export async function fetchSubscriptionNodes(url, subscriptionName, userAgent, c
         });
 
         if (!response.ok) {
+            const cachedResult = await readCachedResult(`HTTP ${response.status}: ${response.statusText}`);
+            if (cachedResult) return cachedResult;
             return {
                 subscriptionName,
                 url,
@@ -80,6 +119,19 @@ export async function fetchSubscriptionNodes(url, subscriptionName, userAgent, c
             parsedNodes = applyExcludeRulesToNodes(parsedNodes, excludeRules);
         }
 
+        const realNodeUrls = parsedNodes
+            .map(node => node?.url)
+            .filter(isRealProxyNode);
+
+        if (enableNodeCache && realNodeUrls.length === 0) {
+            const cachedResult = await readCachedResult(null);
+            if (cachedResult) return cachedResult;
+        }
+
+        if (enableNodeCache && storageAdapter && realNodeUrls.length > 0) {
+            await writeSubscriptionNodeCache(storageAdapter, cacheSub, realNodeUrls);
+        }
+
         return {
             subscriptionName,
             url,
@@ -91,6 +143,8 @@ export async function fetchSubscriptionNodes(url, subscriptionName, userAgent, c
         if (shouldDebug) {
             console.debug(`[DEBUG PREVIEW] Error: ${e.message}`);
         }
+        const cachedResult = await readCachedResult(e.message);
+        if (cachedResult) return cachedResult;
         return {
             subscriptionName,
             url,

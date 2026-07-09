@@ -278,7 +278,12 @@ export function useSubscriptions(markDirty) {
 
         for (const sub of subsToUpdate) {
           try {
-            const result = await fetchNodeCount(sub.url);
+            const result = await fetchNodeCount(
+              sub.url,
+              sub.fetchProxy,
+              Boolean(sub.plusAsSpace),
+              sub.customUserAgent
+            );
             if (result.success && result.data.userInfo) {
               sub.userInfo = result.data.userInfo;
             }
@@ -335,7 +340,7 @@ export function useSubscriptions(markDirty) {
     } else {
       const settings = dataStore.settings;
       const settingsInterval = settings?.autoUpdateInterval;
-      intervalMs = (settingsInterval != null && settingsInterval > 0)
+      intervalMs = (settingsInterval != null)
         ? settingsInterval * 60 * 1000
         : DEFAULT_INTERVAL_MS;
     }

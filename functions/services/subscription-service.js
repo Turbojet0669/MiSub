@@ -78,7 +78,7 @@ export function buildSubscriptionNodeCacheKey(sub = {}) {
     return `node_cache_subscription_url_${Math.abs(hash).toString(36)}`;
 }
 
-async function readSubscriptionNodeCache(storage, sub) {
+export async function readSubscriptionNodeCache(storage, sub) {
     if (!storage?.get) return null;
     try {
         const cached = await storage.get(buildSubscriptionNodeCacheKey(sub));
@@ -91,7 +91,7 @@ async function readSubscriptionNodeCache(storage, sub) {
     }
 }
 
-async function writeSubscriptionNodeCache(storage, sub, nodes) {
+export async function writeSubscriptionNodeCache(storage, sub, nodes) {
     if (!storage?.put) return false;
     const realNodes = Array.isArray(nodes) ? nodes.filter(isRealProxyNode) : [];
     if (realNodes.length === 0) return false;

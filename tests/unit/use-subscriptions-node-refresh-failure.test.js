@@ -6,7 +6,8 @@ const mocks = vi.hoisted(() => ({
   showToast: vi.fn(),
   fetchNodeCount: vi.fn(),
   batchUpdateNodes: vi.fn(),
-  handleError: vi.fn()
+  handleError: vi.fn(),
+  settings: { autoUpdateInterval: 0 }
 }));
 
 vi.mock('pinia', () => ({
@@ -17,7 +18,8 @@ vi.mock('pinia', () => ({
 
 vi.mock('../../src/stores/useDataStore', () => ({
   useDataStore: () => ({
-    saveData: mocks.saveData
+    saveData: mocks.saveData,
+    settings: mocks.settings
   })
 }));
 
@@ -45,6 +47,7 @@ describe('useSubscriptions manual node refresh failures', () => {
     mocks.fetchNodeCount.mockReset();
     mocks.batchUpdateNodes.mockReset();
     mocks.handleError.mockReset();
+    mocks.settings.autoUpdateInterval = 0;
   });
 
   it('clears stale node count and traffic when protective node cache is disabled', async () => {
@@ -117,6 +120,29 @@ describe('useSubscriptions manual node refresh failures', () => {
       expect(mocks.saveData).not.toHaveBeenCalled();
     } finally {
       errorSpy.mockRestore();
+    }
+  });
+
+  it('does not start auto update when interval is explicitly disabled', async () => {
+    vi.useFakeTimers();
+    mocks.subscriptionsRef.value = [{
+      id: 'sub-1',
+      name: 'Airport',
+      url: 'https://airport.example/sub',
+      enabled: true
+    }];
+
+    const { useSubscriptions } = await import('../../src/composables/useSubscriptions.js');
+    const { startAutoUpdate, stopAutoUpdate } = useSubscriptions(vi.fn());
+
+    try {
+      startAutoUpdate();
+      await vi.advanceTimersByTimeAsync(31 * 60 * 1000);
+
+      expect(mocks.fetchNodeCount).not.toHaveBeenCalled();
+    } finally {
+      stopAutoUpdate();
+      vi.useRealTimers();
     }
   });
 });
